@@ -7,7 +7,7 @@
 
 同步脚本：/opt/tvboxosc_sync.sh。
 
-同步日志：cat /var/log/tvboxosc_sync.log。
+查看同步日志：cat /var/log/tvboxosc_sync.log
 
 查看状态
 看直播文件是否存在：ls -lh /opt/tv.m3u。
