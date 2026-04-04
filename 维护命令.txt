@@ -1,0 +1,71 @@
+
+
+路径对照
+直播文件：/opt/tv.m3u。
+
+点播主文件：/opt/TVBoxOSC/tvbox/api.json。
+
+同步脚本：/opt/tvboxosc_sync.sh。
+
+同步日志：cat /var/log/tvboxosc_sync.log。
+
+查看状态
+看直播文件是否存在：ls -lh /opt/tv.m3u。
+
+看点播主文件是否存在：ls -lh /opt/TVBoxOSC/tvbox/api.json。
+
+看点播目录结构：find /opt/TVBoxOSC -maxdepth 2 | head -n 50。
+
+看同步日志最后 50 行：tail -n 50 /var/log/tvboxosc_sync.log。
+
+手动同步
+直接手动跑一次同步：sh /opt/tvboxosc_sync.sh。
+
+边跑边看日志：sh /opt/tvboxosc_sync.sh && tail -n 50 /var/log/tvboxosc_sync.log。
+
+查看定时任务
+看当前 cron 里的 TVBoxOSC 条目：grep '__tvboxosc_managed__' /etc/crontabs/root。
+
+看完整 root crontab：cat /etc/crontabs/root。
+
+重启 cron：/etc/init.d/cron restart。
+
+查看 Web 服务
+看 uhttpd 里的 tvboxosc 配置：uci show uhttpd.tvboxosc。
+
+重载 uhttpd：/etc/init.d/uhttpd reload。
+
+重启 uhttpd：/etc/init.d/uhttpd restart。
+
+查看防火墙
+看脚本写入的防火墙规则：uci show firewall.tvboxosc。
+
+手动重载防火墙：/etc/init.d/firewall reload。
+
+fw4 排查端口：fw4 print | grep 7799，如果你不是 7799 就把端口换成你的实际端口。
+
+查看访问地址
+直播地址：http://路由器IP:端口/tv.m3u。
+点播地址：http://路由器IP:端口/TVBoxOSC/tvbox/api.json。
+
+清理本服务
+如果以后你想只清掉这个服务相关内容，可以用这组：
+uci -q delete uhttpd.tvboxosc
+uci commit uhttpd
+uci -q delete firewall.tvboxosc
+uci commit firewall
+grep -v '__tvboxosc_managed__' /etc/crontabs/root > /etc/crontabs/root.tmp && mv /etc/crontabs/root.tmp /etc/crontabs/root
+rm -f /opt/tvboxosc_sync.sh
+/etc/init.d/cron restart
+/etc/init.d/uhttpd reload
+/etc/init.d/firewall reload
+这组命令对应的就是脚本里的“仅清理本服务”逻辑。
+
+最常用的 5 条
+如果你只想记最实用的，就记这 5 条：
+ls -lh /opt/tv.m3u
+ls -lh /opt/TVBoxOSC/tvbox/api.json
+sh /opt/tvboxosc_sync.sh
+tail -n 50 /var/log/tvboxosc_sync.log
+uci show uhttpd.tvboxosc
+这些基本就够你日常维护了。
