@@ -1,6 +1,6 @@
 #!/bin/sh
 # TVBoxOSC_v2_secured.sh
-# 安全修复：cron独立文件/ZipSlip/HTTPS强制/大小上限/脚本权限
+# 安全修复：防误杀改名/cron移植/ZipSlip/HTTPS强制/大小上限/脚本权限/修复端口判断死结
 set -eu
 
 echo "================================================================"
@@ -8,7 +8,8 @@ echo "                   📺 盒子订阅同步服务 "
 echo "================================================================"
 echo ""
 
-SERVICE_NAME="tvboxosc"
+# 将名字改为 osc_vod
+SERVICE_NAME="osc_vod"
 SERVE_DIR="/opt"
 PACKAGE_DIR_NAME="TVBoxOSC"
 PACKAGE_DIR="$SERVE_DIR/$PACKAGE_DIR_NAME"
@@ -16,10 +17,9 @@ LIVE_FILE="$SERVE_DIR/tv.m3u"
 API_REL_PATH="$PACKAGE_DIR_NAME/tvbox/api.json"
 API_FILE="$SERVE_DIR/$API_REL_PATH"
 INDEX_FILE="$SERVE_DIR/index.html"
-SYNC_SCRIPT="/opt/tvboxosc_sync.sh"
-SYNC_LOG="/var/log/tvboxosc_sync.log"
-# 【修复】专属 cron 文件，独立于 root，防止被其他程序覆盖
-CRON_FILE="/etc/crontabs/tvboxosc"
+SYNC_SCRIPT="/opt/osc_sync.sh"
+SYNC_LOG="/var/log/osc_sync.log"
+
 FIREWALL_NOTE="仅在选择开放 WAN 时创建端口转发规则"
 LIVE_URL='https://codeberg.org/Jsnzkpg/Jsnzkpg/raw/branch/Jsnzkpg/Jsnzkpg1.m3u'
 VOD_URL='https://raw.githubusercontent.com/PizazzGY/NewTVBox/main/%E5%8D%95%E7%BA%BF%E8%B7%AF.zip'
@@ -76,7 +76,7 @@ install_unzip_if_needed() {
 }
 
 check_port_conflict() {
-    if uci show uhttpd 2>/dev/null | grep -v "^uhttpd\.${SERVICE_NAME}\." | awk -F= -v p="$PORT" '
+    if uci show uhttpd 2>/dev/null | grep -v "^uhttpd\.${SERVICE_NAME}\." | grep -v "^uhttpd\.tvboxosc\." | awk -F= -v p="$PORT" '
         /listen_http=/ {
             gsub(/\047|\"/, "", $2)
             n=split($2, a, /[[:space:]]+/)
@@ -89,16 +89,23 @@ check_port_conflict() {
 }
 
 cleanup_old_service() {
-    info "清理旧 tvboxosc 服务..."
+    info "清理历史服务配置，释放端口..."
     uci -q delete uhttpd.$SERVICE_NAME || true
+    # 防呆：把之前可能残留的 tvboxosc 也清理干净
+    uci -q delete uhttpd.tvboxosc || true
     uci commit uhttpd >/dev/null 2>&1 || true
     
     uci -q delete firewall.$SERVICE_NAME || true
+    uci -q delete firewall.tvboxosc || true
     uci commit firewall >/dev/null 2>&1 || true
     
-    # 【修复】直接删除专属文件，不再操作 root
-    rm -f "$CRON_FILE"
+    # 标准 crontab 过滤清理，安全可靠
+    crontab -l 2>/dev/null | grep -v "$SERVICE_NAME" | grep -v "$SYNC_SCRIPT" | grep -v "tvboxosc_sync.sh" > /tmp/_cron || true
+    crontab /tmp/_cron 2>/dev/null || true
+    rm -f /tmp/_cron
+    
     rm -f "$SYNC_SCRIPT"
+    rm -f "/opt/tvboxosc_sync.sh" 2>/dev/null || true
     /etc/init.d/cron restart >/dev/null 2>&1 || /etc/init.d/cron reload >/dev/null 2>&1 || true
     /etc/init.d/uhttpd reload >/dev/null 2>&1 || /etc/init.d/uhttpd restart >/dev/null 2>&1 || true
     /etc/init.d/firewall reload >/dev/null 2>&1 || true
@@ -110,9 +117,8 @@ fetch_file() {
     if command -v curl >/dev/null 2>&1; then
         curl -L --fail --connect-timeout 20 --max-time 300 --retry 2 --retry-delay 3 \
             --proto '=https' --tlsv1.2 \
-            -o "$out" "$url"  # 【修复】强制HTTPS，禁止重定向到内网
+            -o "$out" "$url"
     else
-        # 【修复】BusyBox wget 不支持 --https-only，在调用前校验 URL 协议
         case "$url" in https://*) ;; *) echo "[ERROR] 非HTTPS URL被拒绝: $url" >&2; return 1 ;; esac
         wget --timeout=300 --tries=1 -O "$out" "$url"
     fi
@@ -165,7 +171,6 @@ sync_subscriptions() {
     info "拉取直播订阅..."
     fetch_file "$LIVE_URL" "$TMP_DIR/live.m3u"
     [ -s "$TMP_DIR/live.m3u" ] || fail "直播订阅下载为空"
-    # 【修复】m3u 大小上限：不超过 50MB
     _m3u_size=$(wc -c < "$TMP_DIR/live.m3u")
     [ "$_m3u_size" -le 52428800 ] || fail "直播 m3u 文件过大（超过50MB），疑似异常"
     grep -Eq '^#EXTM3U|https?://' "$TMP_DIR/live.m3u" || fail "直播订阅内容疑似无效"
@@ -173,7 +178,6 @@ sync_subscriptions() {
     info "拉取点播订阅 ZIP..."
     fetch_file "$VOD_URL" "$TMP_DIR/vod.zip"
     [ -s "$TMP_DIR/vod.zip" ] || fail "点播订阅 ZIP 下载为空"
-    # 【修复】ZIP bomb 防护：限制文件大小不超过 200MB
     _zip_size=$(wc -c < "$TMP_DIR/vod.zip")
     [ "$_zip_size" -le 209715200 ] || fail "点播 ZIP 文件过大（超过200MB），疑似异常"
     unzip -tq "$TMP_DIR/vod.zip" >/dev/null 2>&1 || fail "点播订阅 ZIP 完整性校验失败"
@@ -181,7 +185,7 @@ sync_subscriptions() {
     info "解压点播订阅..."
     mkdir -p "$TMP_DIR/vod"
     unzip -oq "$TMP_DIR/vod.zip" -d "$TMP_DIR/vod" || fail "点播订阅解压失败"
-    # 【修复】ZipSlip 防护：校验解压后无文件逃逸到 TMP_DIR 之外
+    
     if command -v realpath >/dev/null 2>&1; then
         ESCAPED=$(find "$TMP_DIR/vod" -name "*" | while read -r f; do
             rp=$(realpath "$f" 2>/dev/null)
@@ -248,17 +252,15 @@ setup_firewall() {
 }
 
 setup_cron() {
-    # 【修复】写入专属独立文件，crond 自动加载目录下所有文件
-    # 其他程序（luci/opkg/系统升级）修改 root 文件时，本文件完全不受影响
-    mkdir -p /etc/crontabs
-    : > "$CRON_FILE"
+    crontab -l 2>/dev/null | grep -v "$SERVICE_NAME" | grep -v "$SYNC_SCRIPT" > /tmp/_cron || true
+    
     for h in $HOURS; do
-        printf "0 %s * * * /bin/sh %s\n" "$h" "$SYNC_SCRIPT" >> "$CRON_FILE"
+        echo "0 $h * * * /bin/sh $SYNC_SCRIPT" >> /tmp/_cron
     done
-    chmod 600 "$CRON_FILE"
-    [ -f /etc/crontabs/root ] || touch /etc/crontabs/root
+    
+    crontab /tmp/_cron && rm -f /tmp/_cron
     /etc/init.d/cron restart >/dev/null 2>&1 || /etc/init.d/cron reload >/dev/null 2>&1 || true
-    info "计划任务已写入: $CRON_FILE（独立文件，不受其他程序干扰）"
+    info "计划任务已写入: root crontab"
 }
 
 write_sync_script() {
@@ -266,8 +268,7 @@ write_sync_script() {
 #!/bin/sh
 set -eu
 
-# 修复：全局霸王条款重定向！本脚本所有输出（含报错）强制写入日志文件
-exec >> "/var/log/tvboxosc_sync.log" 2>&1
+exec >> "/var/log/osc_sync.log" 2>&1
 
 SERVE_DIR="/opt"
 PACKAGE_DIR_NAME="TVBoxOSC"
@@ -285,9 +286,8 @@ fetch_file() {
     if command -v curl >/dev/null 2>&1; then
         curl -L --fail --connect-timeout 20 --max-time 300 --retry 2 --retry-delay 3 \
             --proto '=https' --tlsv1.2 \
-            -o "$out" "$url"  # 【修复】强制HTTPS，禁止重定向到内网
+            -o "$out" "$url"
     else
-        # 【修复】BusyBox wget 不支持 --https-only，在调用前校验 URL 协议
         case "$url" in https://*) ;; *) echo "[ERROR] 非HTTPS URL被拒绝: $url" >&2; return 1 ;; esac
         wget --timeout=300 --tries=1 -O "$out" "$url"
     fi
@@ -336,7 +336,7 @@ fetch_file "$VOD_URL" "$TMP_DIR/vod.zip"
 unzip -tq "$TMP_DIR/vod.zip" >/dev/null 2>&1 || { echo '[ERROR] 点播订阅 ZIP 完整性校验失败'; exit 1; }
 mkdir -p "$TMP_DIR/vod"
 unzip -oq "$TMP_DIR/vod.zip" -d "$TMP_DIR/vod" || { echo '[ERROR] 点播订阅解压失败'; exit 1; }
-# 【修复】ZipSlip 防护
+
 if command -v realpath >/dev/null 2>&1; then
     ESCAPED=$(find "$TMP_DIR/vod" -name "*" | while read -r f; do
         rp=$(realpath "$f" 2>/dev/null)
@@ -357,7 +357,7 @@ write_index
 info "点播主文件检测成功：$API_FILE"
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] 任务结束: 成功更新并替换数据"
 EOF
-    chmod 755 "$SYNC_SCRIPT"   # 【修复】owner可执行，禁止其他用户写入防止脚本被篡改
+    chmod 755 "$SYNC_SCRIPT"
 }
 
 show_result() {
@@ -391,8 +391,11 @@ main() {
     ask_hours
     ask_wan_open
     install_unzip_if_needed
-    check_port_conflict
+
+    # 【调换执行顺序】先清理自己的旧配置并释放端口，然后再去检查这个端口有没有被“别的服务”占用
     cleanup_old_service
+    check_port_conflict
+    
     prepare_dirs
     write_sync_script
     sync_subscriptions
