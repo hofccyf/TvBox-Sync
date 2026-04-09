@@ -1,73 +1,51 @@
-查看计划任务：
-cat /etc/crontabs/tvboxosc
-ls -l /etc/crontabs/
-crontab -l
-ps | grep crond
+1. 🔄 日常同步与日志排查
+如果你不想等计划任务触发，想立刻更新数据，或者想看看到底有没有报错：
 
-路径对照
-直播文件：/opt/tv.m3u。
+手动触发一次全量同步：
+sh /opt/osc_sync.sh
 
-点播主文件：/opt/TVBoxOSC/tvbox/api.json。
+实时滚动查看同步日志（排错必备）：
+tail -f /var/log/osc_sync.log
+(按 Ctrl+C 退出查看)
 
-同步脚本：/opt/tvboxosc_sync.sh。
+查看全部历史日志：
+cat /var/log/osc_sync.log
 
-查看同步日志：cat /var/log/tvboxosc_sync.log
+2. ⚙️ 系统服务与状态管理
 
-查看状态
-看直播文件是否存在：ls -lh /opt/tv.m3u。
+在修改了路由器端口、或者感觉 Web 服务卡死时使用：
+重启 Web 服务 (uhttpd)：
+/etc/init.d/uhttpd restart
 
-看点播主文件是否存在：ls -lh /opt/TVBoxOSC/tvbox/api.json。
-
-看点播目录结构：find /opt/TVBoxOSC -maxdepth 2 | head -n 50。
-
-看同步日志最后 50 行：tail -n 50 /var/log/tvboxosc_sync.log。
-
-手动同步
-直接手动跑一次同步：sh /opt/tvboxosc_sync.sh。
-
-边跑边看日志：sh /opt/tvboxosc_sync.sh && tail -n 50 /var/log/tvboxosc_sync.log。
-
-查看定时任务
-看当前 cron 里的 TVBoxOSC 条目：grep '__tvboxosc_managed__' /etc/crontabs/root。
-
-看完整 root crontab：cat /etc/crontabs/root。
-
-重启 cron：/etc/init.d/cron restart。
-
-查看 Web 服务
-看 uhttpd 里的 tvboxosc 配置：uci show uhttpd.tvboxosc。
-
-重载 uhttpd：/etc/init.d/uhttpd reload。
-
-重启 uhttpd：/etc/init.d/uhttpd restart。
-
-查看防火墙
-看脚本写入的防火墙规则：uci show firewall.tvboxosc。
-
-手动重载防火墙：/etc/init.d/firewall reload。
-
-fw4 排查端口：fw4 print | grep 7799，如果你不是 7799 就把端口换成你的实际端口。
-
-查看访问地址
-直播地址：http://路由器IP:端口/tv.m3u。
-点播地址：http://路由器IP:端口/TVBoxOSC/tvbox/api.json。
-
-卸载本服务
-uci -q delete uhttpd.tvboxosc
-uci commit uhttpd
-uci -q delete firewall.tvboxosc
-uci commit firewall
-grep -v '__tvboxosc_managed__' /etc/crontabs/root > /etc/crontabs/root.tmp && mv /etc/crontabs/root.tmp /etc/crontabs/root
-rm -f /opt/tvboxosc_sync.sh
+重启计划任务服务 (Cron)：
 /etc/init.d/cron restart
-/etc/init.d/uhttpd reload
+
+查看当前已生效的定时任务：
+crontab -l | grep osc_sync
+
+重载防火墙（如果在安装时开启了 WAN 访问）：
 /etc/init.d/firewall reload
 
+3. 🗑️ 彻底卸载与清理遗留
+如果你不想用了，或者想完全推倒重来，按顺序执行以下命令可以将其“连根拔起”，不留任何垃圾：
 
-最常用的 5 条
-ls -lh /opt/tv.m3u
-ls -lh /opt/TVBoxOSC/tvbox/api.json
-sh /opt/tvboxosc_sync.sh
-tail -n 50 /var/log/tvboxosc_sync.log
-uci show uhttpd.tvboxosc
-这些基本就够日常维护了。
+第一步：清理系统配置（Web 与 防火墙）
+uci -q delete uhttpd.osc_vod
+uci commit uhttpd
+uci -q delete firewall.osc_vod
+uci commit firewall
+
+第二步：清理计划任务
+crontab -l | grep -v "osc_sync.sh" > /tmp/clean_cron
+crontab /tmp/clean_cron
+rm -f /tmp/clean_cron
+
+第三步：删除所有实体文件并重启服务
+rm -rf /opt/TVBoxOSC
+rm -f /opt/tv.m3u
+rm -f /opt/index.html
+rm -f /opt/osc_sync.sh
+rm -f /var/log/osc_sync.log
+/etc/init.d/uhttpd restart
+/etc/init.d/cron restart
+/etc/init.d/firewall reload
