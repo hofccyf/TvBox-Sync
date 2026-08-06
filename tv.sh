@@ -244,7 +244,7 @@ API_REL_PATH="$PACKAGE_DIR_NAME/tvbox/api.json"
 API_FILE="$SERVE_DIR/$API_REL_PATH"
 INDEX_FILE="$SERVE_DIR/index.html"
 
-LIVE_URL='https://codeberg.org/Jsnzkpg/Jsnzkpg/raw/branch/Jsnzkpg/Jsnzkpg1.m3u'
+LIVE_URL='https://live.445569.xyz/live.m3u'
 VOD_URL='https://9877.kstore.space/one.json'
 
 info() { echo "[INFO] $*"; }
