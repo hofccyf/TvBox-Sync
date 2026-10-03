@@ -21,7 +21,7 @@ SYNC_LOG="/var/log/osc_sync.log"
 
 FIREWALL_NOTE="仅在选择开放 WAN 时创建端口转发规则"
 # 最新双线直连源
-LIVE_URL='https://live.445569.xyz/live.m3u'
+LIVE_URL='https://iptv.445569.xyz/live.m3u'
 VOD_URL='https://gh-proxy.org/https://raw.githubusercontent.com/Jsnzkpg/Jsnzkpg/Jsnzkpg/Jsnzkpg'
 
 DEFAULT_PORT="7799"
@@ -244,7 +244,7 @@ API_REL_PATH="$PACKAGE_DIR_NAME/tvbox/api.json"
 API_FILE="$SERVE_DIR/$API_REL_PATH"
 INDEX_FILE="$SERVE_DIR/index.html"
 
-LIVE_URL='https://live.445569.xyz/live.m3u'
+LIVE_URL='https://iptv.445569.xyz/live.m3u'
 VOD_URL='https://gh-proxy.org/https://raw.githubusercontent.com/Jsnzkpg/Jsnzkpg/Jsnzkpg/Jsnzkpg'
 
 info() { echo "[INFO] $*"; }
